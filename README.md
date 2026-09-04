@@ -56,7 +56,7 @@ pip install -r requirements.txt
 .\.venv\Scripts\python.exe main.py
 ```
 
-Windows 下也可以直接运行 `启动.bat`。
+Windows 下也可以直接运行 `启动.bat`。该脚本会优先启动 `dist` 内已打包程序；没有打包程序时，会自动检测/使用 winget 安装 Python、创建 `.venv`、安装依赖、下载嵌入模型，然后启动源码版本。
 
 ### 4. 配置 AI
 
