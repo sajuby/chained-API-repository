@@ -19,3 +19,6 @@ dist/
 data/
 models/
 uploads/
+
+*.zip
+*.7z
