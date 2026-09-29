@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QAction, QImage, QPixmap
+from PySide6.QtGui import QAction, QColor, QImage, QPainter, QPixmap
+from PySide6.QtCore import QRectF
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -46,9 +47,21 @@ class FileDescriptor:
 class _PdfPage(QLabel):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.selection_rects: list[QRectF] = []
         self.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.setMinimumSize(200, 200)
+        self.setMouseTracking(True)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if not self.selection_rects:
+            return
+        painter = QPainter(self)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(110, 156, 255, 75))
+        for rect in self.selection_rects:
+            painter.drawRect(rect)
 
 
 class PdfReader(QWidget):
@@ -61,6 +74,9 @@ class PdfReader(QWidget):
         self.page = 1
         self.zoom = 100
         self._last_page_wheel = 0.0
+        self._selection_start = None
+        self._selected_text = ""
+        self._words: list[tuple[object, str]] = []
         self._doc = None
 
         self.scroll = QScrollArea()
@@ -113,6 +129,8 @@ class PdfReader(QWidget):
             QImage.Format_RGB888,
         ).copy()
         pixmap = QPixmap.fromImage(image)
+        self._words = [(pymupdf.Rect(word[:4]), str(word[4])) for word in page.get_text("words")]
+        self._clear_selection()
         self.page_label.setPixmap(pixmap)
         self.page_label.resize(pixmap.size())
         self.scroll.verticalScrollBar().setValue(0)
@@ -158,6 +176,20 @@ class PdfReader(QWidget):
         return self.page, False
 
     def eventFilter(self, watched, event) -> bool:
+        if watched is self.page_label and event.type() == QEvent.MouseButtonPress:
+            if event.button() == Qt.LeftButton:
+                self._selection_start = event.position()
+                self._update_selection(event.position(), event.position())
+                return True
+        if watched is self.page_label and event.type() == QEvent.MouseMove and self._selection_start is not None:
+            if event.buttons() & Qt.LeftButton:
+                self._update_selection(self._selection_start, event.position())
+                return True
+        if watched is self.page_label and event.type() == QEvent.MouseButtonRelease:
+            if event.button() == Qt.LeftButton and self._selection_start is not None:
+                self._update_selection(self._selection_start, event.position())
+                self._selection_start = None
+                return True
         if event.type() == QEvent.Wheel and watched in {self.scroll.viewport(), self.page_label}:
             delta = event.angleDelta().y() or event.pixelDelta().y()
             if delta:
@@ -177,15 +209,54 @@ class PdfReader(QWidget):
                 return True
         return super().eventFilter(watched, event)
 
+    def _update_selection(self, start, end) -> None:
+        if self._doc is None:
+            return
+        scale = self.zoom / 100
+        x1, x2 = sorted((start.x(), end.x()))
+        y1, y2 = sorted((start.y(), end.y()))
+        selection_rect = (x1 / scale, y1 / scale, x2 / scale, y2 / scale)
+        words: list[str] = []
+        rects: list[QRectF] = []
+        for word_rect, word in self._words:
+            if word_rect.intersects(selection_rect):
+                words.append(word)
+                rects.append(
+                    QRectF(
+                        word_rect.x0 * scale,
+                        word_rect.y0 * scale,
+                        (word_rect.x1 - word_rect.x0) * scale,
+                        (word_rect.y1 - word_rect.y0) * scale,
+                    )
+                )
+        self._selected_text = " ".join(words).strip()
+        self.page_label.selection_rects = rects
+        self.page_label.update()
+
+    def _clear_selection(self) -> None:
+        self._selected_text = ""
+        self.page_label.selection_rects = []
+        self.page_label.update()
+
     def _show_context_menu(self, position) -> None:
         menu = QMenu(self)
-        ask_action = menu.addAction("询问 AI 关于本页")
-        copy_action = menu.addAction("复制本页文字")
+        ask_action = menu.addAction("询问 AI")
+        copy_action = menu.addAction("复制选中内容" if self._selected_text else "复制本页文字")
+        clear_action = menu.addAction("清除选择")
+        clear_action.setEnabled(bool(self._selected_text))
         selected = menu.exec(self.page_label.mapToGlobal(position))
         if selected == ask_action:
-            self.ask_current_page()
+            self.ask_selection()
         elif selected == copy_action:
-            QApplication.clipboard().setText(self.page_text())
+            QApplication.clipboard().setText(self._selected_text or self.page_text())
+        elif selected == clear_action:
+            self._clear_selection()
+
+    def ask_selection(self) -> str:
+        text = self._selected_text or self.page_text()[:5000]
+        if text:
+            self.ask_requested.emit(text)
+        return text
 
     def ask_current_page(self) -> str:
         text = self.page_text()

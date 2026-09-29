@@ -38,6 +38,9 @@ class GuiSmokeTests(unittest.TestCase):
         self.context = AppContext(self.config, self.database)
 
     def tearDown(self) -> None:
+        pdf_reader = getattr(self, "pdf_reader", None)
+        if pdf_reader is not None:
+            pdf_reader.close_document()
         self.context.vector_store.close()
         self.database.close()
         self.temp_dir.cleanup()
@@ -126,6 +129,25 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(reader.zoom, 110)
         self.assertGreater(reader.page_label.pixmap().width(), old_width)
         reader.close_document()
+
+    def test_pdf_text_selection_can_ask_ai(self) -> None:
+        import pymupdf
+
+        pdf_path = self.root / "selectable.pdf"
+        pdf = pymupdf.open()
+        page = pdf.new_page()
+        page.insert_text((72, 72), "Hello knowledge base", fontsize=14)
+        pdf.save(pdf_path)
+        pdf.close()
+        reader = PdfReader()
+        self.pdf_reader = reader
+        self.assertTrue(reader.open(pdf_path))
+        captured: list[str] = []
+        reader.ask_requested.connect(captured.append)
+        selected = reader._update_selection(QPointF(60, 60), QPointF(300, 100))
+        text = reader.ask_selection()
+        self.assertIn("knowledge", text)
+        self.assertEqual(captured, [text])
 
     def test_empty_knowledge_base_disables_chat(self) -> None:
         repo = self.context.repository()
