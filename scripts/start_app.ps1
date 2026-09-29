@@ -71,7 +71,8 @@ $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
 if (-not (Test-Path $venvPython)) {
     Write-Step "正在创建虚拟环境..."
-    & $launcherInfo.Launcher $launcherInfo.Args -m venv $venvDir
+    $launcherArgs = @($launcherInfo.Args)
+    & $launcherInfo.Launcher @launcherArgs -m venv $venvDir
     if ($LASTEXITCODE -ne 0) {
         Write-Host "虚拟环境创建失败。"
         exit 1
