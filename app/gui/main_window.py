@@ -196,8 +196,10 @@ class MainWindow(QMainWindow):
         self.reader.ask_requested.connect(self.open_ai_side_panel)
         self.chat = ChatPanel(context)
         self.chat.citation_requested.connect(self.open_document_by_id)
+        self.chat.close_requested.connect(lambda: self.switch_workspace("reader"))
         self.ai_side_panel = ChatPanel(context)
         self.ai_side_panel.citation_requested.connect(self.open_document_by_id)
+        self.ai_side_panel.close_requested.connect(self.ai_side_panel.hide)
         self.ai_side_panel.hide()
         self.ai_side_panel.setFixedWidth(360)
         self.workspace_stack = QStackedWidget()
@@ -369,6 +371,8 @@ class MainWindow(QMainWindow):
     def _import_done(self, result) -> None:
         self.statusBar().showMessage("导入完成")
         self.sidebar.refresh()
+        self.chat.refresh_availability()
+        self.ai_side_panel.refresh_availability()
         if result:
             self.open_document_by_id(result[0].id)
 
@@ -399,7 +403,7 @@ class MainWindow(QMainWindow):
         self.switch_workspace("chat")
         self.chat.open_conversation(conversation_id)
 
-    def open_ai_side_panel(self, descriptor: FileDescriptor) -> None:
+    def open_ai_side_panel(self, descriptor: FileDescriptor, selected_text: str = "") -> None:
         if not self.current_kb_id:
             QMessageBox.information(self, "提示", "请先创建或选择知识库。")
             return
@@ -408,10 +412,18 @@ class MainWindow(QMainWindow):
             self.ai_side_panel.new_conversation()
         self.ai_side_panel.show()
         page = self.reader.active_page()
-        prompt = f"请结合当前文档《{descriptor.filename}》"
-        if page:
-            prompt += f"第 {page} 页"
-        prompt += "，帮我解释或整理这部分内容。"
+        if selected_text.strip():
+            prompt = (
+                f"请根据当前文档《{descriptor.filename}》"
+                + (f"第 {page} 页" if page else "")
+                + "回答。以下是我选中的内容：\n\n"
+                + selected_text.strip()[:4000]
+            )
+        else:
+            prompt = f"请结合当前文档《{descriptor.filename}》"
+            if page:
+                prompt += f"第 {page} 页"
+            prompt += "，帮我解释或整理这部分内容。"
         self.ai_side_panel.focus_question(prompt)
 
     def switch_workspace(self, name: str) -> None:
@@ -472,6 +484,8 @@ class MainWindow(QMainWindow):
     def _after_change(self, message: str) -> None:
         self.statusBar().showMessage(message, 3000)
         self.sidebar.refresh()
+        self.chat.refresh_availability()
+        self.ai_side_panel.refresh_availability()
 
     def _run_worker(self, task, success) -> None:
         self._set_busy(True)

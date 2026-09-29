@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from app.core.embedder import Embedder
 from app.core.llm_client import LLMClient
@@ -33,13 +34,15 @@ class QAService:
         self,
         repository: Repository,
         vector_store: VectorStore,
-        embedder: Embedder,
-        llm_client: LLMClient,
+        embedder: Embedder | None = None,
+        llm_client: LLMClient | None = None,
+        embedder_factory: Callable[[], Embedder] | None = None,
     ) -> None:
         self.repo = repository
         self.vector_store = vector_store
         self.embedder = embedder
         self.llm = llm_client
+        self.embedder_factory = embedder_factory
 
     def ask(self, question: str, conversation_id: int, stream: bool = False):
         conversation = self.repo.get_conversation(conversation_id)
@@ -47,6 +50,13 @@ class QAService:
             raise KeyError(f"会话不存在: {conversation_id}")
         self.repo.add_message(conversation_id, "user", question)
         self._ensure_title(conversation, question)
+        if self.vector_store.count(conversation.kb_id) == 0:
+            self.repo.add_message(conversation_id, "assistant", CANNOT_ANSWER)
+            return QAResult(answer=CANNOT_ANSWER, conversation_id=conversation_id)
+        if self.embedder is None:
+            if self.embedder_factory is None:
+                raise RuntimeError("未配置嵌入模型。")
+            self.embedder = self.embedder_factory()
         query_vector = self.embedder.embed([question])[0]
         settings = self.llm.config.retrieval
         rows = self.vector_store.query(

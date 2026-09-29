@@ -122,7 +122,8 @@ class AppContext:
             qa = QAService(
                 repository=repo,
                 vector_store=self.vector_store,
-                embedder=self.get_embedder(),
+                embedder=None,
+                embedder_factory=self.get_embedder,
                 llm_client=LLMClient(self.config.config),
             )
             return qa.ask(question, conversation_id)

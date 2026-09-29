@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QAction, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QScrollArea,
     QSizePolicy,
@@ -49,17 +52,24 @@ class _PdfPage(QLabel):
 
 
 class PdfReader(QWidget):
+    ask_requested = Signal(str)
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.path: Path | None = None
         self.page_count = 0
         self.page = 1
         self.zoom = 100
+        self._last_page_wheel = 0.0
         self._doc = None
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.page_label = _PdfPage()
+        self.page_label.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.page_label.customContextMenuRequested.connect(self._show_context_menu)
+        self.scroll.viewport().installEventFilter(self)
+        self.page_label.installEventFilter(self)
         self.scroll.setWidget(self.page_label)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -89,9 +99,11 @@ class PdfReader(QWidget):
         if self._doc is None or self.page_count == 0:
             self.page_label.clear()
             return
+        import pymupdf
+
         scale = self.zoom / 100
         page = self._doc.load_page(self.page - 1)
-        matrix = page.rect * (scale * 2)
+        matrix = pymupdf.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=matrix, alpha=False)
         image = QImage(
             pix.samples,
@@ -145,6 +157,50 @@ class PdfReader(QWidget):
                 return self.page, True
         return self.page, False
 
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Wheel and watched in {self.scroll.viewport(), self.page_label}:
+            delta = event.angleDelta().y() or event.pixelDelta().y()
+            if delta:
+                if event.modifiers() & (Qt.ControlModifier | Qt.AltModifier):
+                    if delta > 0:
+                        self.zoom_in()
+                    else:
+                        self.zoom_out()
+                else:
+                    now = time.monotonic()
+                    if now - self._last_page_wheel >= 0.18:
+                        self._last_page_wheel = now
+                        if delta > 0:
+                            self.previous_page()
+                        else:
+                            self.next_page()
+                return True
+        return super().eventFilter(watched, event)
+
+    def _show_context_menu(self, position) -> None:
+        menu = QMenu(self)
+        ask_action = menu.addAction("询问 AI 关于本页")
+        copy_action = menu.addAction("复制本页文字")
+        selected = menu.exec(self.page_label.mapToGlobal(position))
+        if selected == ask_action:
+            self.ask_current_page()
+        elif selected == copy_action:
+            QApplication.clipboard().setText(self.page_text())
+
+    def ask_current_page(self) -> str:
+        text = self.page_text()
+        if text:
+            self.ask_requested.emit(text[:5000])
+        return text
+
+    def page_text(self) -> str:
+        if not self._doc or self.page < 1:
+            return ""
+        try:
+            return self._doc.load_page(self.page - 1).get_text("text").strip()
+        except Exception:
+            return ""
+
     def close_document(self) -> None:
         if self._doc is not None:
             try:
@@ -155,11 +211,15 @@ class PdfReader(QWidget):
 
 
 class TextReader(QWidget):
+    ask_requested = Signal(str)
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.path: Path | None = None
         self.browser = QTextBrowser()
         self.browser.setOpenExternalLinks(True)
+        self.browser.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.browser.customContextMenuRequested.connect(self._show_context_menu)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.browser)
@@ -198,13 +258,33 @@ class TextReader(QWidget):
     def close_document(self) -> None:
         self.browser.clear()
 
+    def _show_context_menu(self, position) -> None:
+        menu = self.browser.createStandardContextMenu()
+        menu.addSeparator()
+        ask_action = QAction("询问 AI", menu)
+        ask_action.setEnabled(bool(self.browser.textCursor().selectedText().strip()))
+        menu.addAction(ask_action)
+        selected = menu.exec(self.browser.mapToGlobal(position))
+        if selected == ask_action:
+            self.ask_selection()
+
+    def ask_selection(self) -> str:
+        text = self.browser.textCursor().selectedText().replace("\u2029", "\n").strip()
+        if text:
+            self.ask_requested.emit(text)
+        return text
+
 
 class ImageReader(QWidget):
+    ask_requested = Signal(str)
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.path: Path | None = None
         self.label = QLabel()
         self.label.setAlignment(Qt.AlignCenter)
+        self.label.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.label.customContextMenuRequested.connect(self._show_context_menu)
         self.zoom = 100
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -251,9 +331,16 @@ class ImageReader(QWidget):
     def close_document(self) -> None:
         self.label.clear()
 
+    def _show_context_menu(self, position) -> None:
+        menu = QMenu(self)
+        ask_action = menu.addAction("询问 AI 关于此图片")
+        selected = menu.exec(self.label.mapToGlobal(position))
+        if selected == ask_action:
+            self.ask_requested.emit(f"请分析图片文件：{self.path.name if self.path else ''}")
+
 
 class ReaderWorkspace(QWidget):
-    ask_requested = Signal(object)
+    ask_requested = Signal(object, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -339,6 +426,10 @@ class ReaderWorkspace(QWidget):
             if not ok:
                 QMessageBox.warning(self, "无法打开", f"无法阅读文件：{descriptor.filename}")
                 return
+            if hasattr(reader, "ask_requested"):
+                reader.ask_requested.connect(
+                    lambda text, document_id=descriptor.id: self._reader_ask_requested(document_id, text)
+                )
             self.readers[descriptor.id] = reader
             tab = self.tabs.addTab(reader, descriptor.filename)
             self.tabs.setTabToolTip(tab, descriptor.path)
@@ -400,7 +491,12 @@ class ReaderWorkspace(QWidget):
         if not descriptor:
             QMessageBox.information(self, "提示", "请先打开一份文档。")
             return
-        self.ask_requested.emit(descriptor)
+        self.ask_requested.emit(descriptor, "")
+
+    def _reader_ask_requested(self, document_id: int, text: str) -> None:
+        descriptor = self.descriptors.get(document_id)
+        if descriptor:
+            self.ask_requested.emit(descriptor, text)
 
     def _current_reader(self):
         return self.readers.get(self.current_id)

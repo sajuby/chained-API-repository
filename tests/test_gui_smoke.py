@@ -9,12 +9,18 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from app.core.config import ConfigManager
 from app.data.database import Database
+from app.gui.chat_panel import ChatPanel
 from app.gui.context import AppContext
 from app.gui.main_window import MainWindow
+from app.gui.motion import SmoothInteractionFilter
+from app.gui.reader_panel import PdfReader, TextReader
 from app.gui.theme import BackgroundHost
 
 
@@ -81,11 +87,84 @@ class GuiSmokeTests(unittest.TestCase):
         window.refresh_kbs()
         window.open_document_by_id(doc.id)
         descriptor = window.reader.active_descriptor()
-        window.open_ai_side_panel(descriptor)
+        window.open_ai_side_panel(descriptor, "这是选中的内容")
         self.app.processEvents()
         self.assertFalse(window.ai_side_panel.isHidden())
         self.assertEqual(window.ai_side_panel.current_kb_id, kb.id)
+        self.assertIn("这是选中的内容", window.ai_side_panel.input.toPlainText())
         window.close()
+
+    def test_pdf_wheel_switches_page_and_zoom_changes_size(self) -> None:
+        import pymupdf
+
+        pdf_path = self.root / "pages.pdf"
+        pdf = pymupdf.open()
+        pdf.new_page()
+        pdf.new_page()
+        pdf.save(pdf_path)
+        pdf.close()
+        reader = PdfReader()
+        self.assertTrue(reader.open(pdf_path))
+        self.addCleanup(reader.close_document)
+        old_page = reader.page
+        old_width = reader.page_label.pixmap().width()
+        wheel = QWheelEvent(
+            QPointF(5, 5),
+            QPointF(5, 5),
+            QPoint(0, 0),
+            QPoint(0, -120),
+            Qt.NoButton,
+            Qt.NoModifier,
+            Qt.ScrollUpdate,
+            False,
+        )
+        self.assertTrue(reader.eventFilter(reader.scroll.viewport(), wheel))
+        self.assertEqual(reader.page, old_page + 1)
+        self.assertTrue(reader.eventFilter(reader.scroll.viewport(), wheel))
+        self.assertEqual(reader.page, old_page + 1)
+        reader.zoom_in()
+        self.assertEqual(reader.zoom, 110)
+        self.assertGreater(reader.page_label.pixmap().width(), old_width)
+        reader.close_document()
+
+    def test_empty_knowledge_base_disables_chat(self) -> None:
+        repo = self.context.repository()
+        try:
+            kb = repo.create_kb("空知识库")
+        finally:
+            repo.close()
+        panel = ChatPanel(self.context)
+        panel.set_kb(kb.id)
+        self.assertFalse(panel.input.isEnabled())
+        self.assertFalse(panel.send_button.isEnabled())
+        self.assertIn("暂无已索引文档", panel.status.text())
+
+    def test_selected_text_can_ask_ai(self) -> None:
+        path = self.root / "selection.md"
+        path.write_text("# 标题\n这是需要询问的内容。", encoding="utf-8")
+        reader = TextReader()
+        self.assertTrue(reader.open(path))
+        reader.browser.selectAll()
+        captured: list[str] = []
+        reader.ask_requested.connect(captured.append)
+        text = reader.ask_selection()
+        self.assertIn("需要询问的内容", text)
+        self.assertEqual(captured, [text])
+        reader.close_document()
+
+    def test_button_motion_filter_animates_shadow(self) -> None:
+        button = QPushButton("测试")
+        button.resize(100, 32)
+        button.show()
+        motion = SmoothInteractionFilter(self.app)
+        motion.eventFilter(button, QEvent(QEvent.Enter))
+        QTest.qWait(220)
+        self.assertIsNotNone(button.graphicsEffect())
+        self.assertGreater(button.graphicsEffect().blurRadius(), 0)
+        motion.eventFilter(button, QEvent(QEvent.Leave))
+        QTest.qWait(220)
+        self.assertLess(button.graphicsEffect().blurRadius(), 1)
+        button.close()
 
     def test_background_host_paints_full_cover(self) -> None:
         from PySide6.QtGui import QImage, QPainter

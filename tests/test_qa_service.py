@@ -85,6 +85,26 @@ class QAServiceTests(unittest.TestCase):
         self.assertEqual(result.answer, CANNOT_ANSWER)
         self.assertEqual(fake.calls, 0)
 
+    def test_empty_knowledge_base_does_not_load_embedder(self) -> None:
+        kb_id = self.repo.create_kb("零向量库").id
+        conversation = self.repo.create_conversation(kb_id)
+        loaded = []
+
+        def factory():
+            loaded.append(True)
+            return self.embedder
+
+        qa = QAService(
+            self.repo,
+            self.vector_store,
+            embedder=None,
+            llm_client=FakeLLM(),
+            embedder_factory=factory,
+        )
+        result = qa.ask("没有文档时不应加载模型", conversation.id)
+        self.assertEqual(result.answer, CANNOT_ANSWER)
+        self.assertEqual(loaded, [])
+
 
 if __name__ == "__main__":
     unittest.main()

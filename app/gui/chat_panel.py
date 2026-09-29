@@ -27,6 +27,7 @@ from app.gui.workers import TaskThread
 
 class ChatPanel(QWidget):
     citation_requested = Signal(int, int)
+    close_requested = Signal()
 
     def __init__(self, context: AppContext, parent=None) -> None:
         super().__init__(parent)
@@ -37,6 +38,8 @@ class ChatPanel(QWidget):
 
         self.title = QLabel("对话")
         self.title.setStyleSheet("font-size:18px;font-weight:700;color:#334259;")
+        self.back_button = QPushButton("返回")
+        self.back_button.clicked.connect(self.close_requested)
         self.conversations = QComboBox()
         self.conversations.setMinimumWidth(180)
         self.conversations.currentIndexChanged.connect(self._conversation_selected)
@@ -50,6 +53,7 @@ class ChatPanel(QWidget):
         generate_btn.clicked.connect(self.generate_document)
 
         top = QHBoxLayout()
+        top.addWidget(self.back_button)
         top.addWidget(self.title)
         top.addWidget(self.conversations, 1)
         top.addWidget(new_btn)
@@ -63,12 +67,12 @@ class ChatPanel(QWidget):
         self.input = QTextEdit()
         self.input.setPlaceholderText("输入问题，Enter 发送；Shift+Enter 换行")
         self.input.setFixedHeight(90)
-        send = QPushButton("发送")
-        send.setFixedWidth(90)
-        send.clicked.connect(self.send)
+        self.send_button = QPushButton("发送")
+        self.send_button.setFixedWidth(90)
+        self.send_button.clicked.connect(self.send)
         bottom = QHBoxLayout()
         bottom.addWidget(self.input, 1)
-        bottom.addWidget(send, 0, Qt.AlignBottom)
+        bottom.addWidget(self.send_button, 0, Qt.AlignBottom)
         self.status = QLabel("就绪")
 
         layout = QVBoxLayout(self)
@@ -90,7 +94,8 @@ class ChatPanel(QWidget):
     def focus_question(self, text: str = "") -> None:
         if text:
             self.input.setPlainText(text)
-        self.input.setFocus()
+        if self.input.isEnabled():
+            self.input.setFocus()
 
     def _refresh_conversations(self) -> None:
         self.conversations.blockSignals(True)
@@ -109,6 +114,36 @@ class ChatPanel(QWidget):
         else:
             self.current_conversation_id = None
             self.browser.clear()
+        self._update_availability()
+
+    def _has_documents(self) -> bool:
+        if not self.current_kb_id:
+            return False
+        return self.context.vector_store.count(self.current_kb_id) > 0
+
+    def refresh_availability(self) -> None:
+        self._update_availability()
+
+    def _update_availability(self) -> None:
+        has_kb = self.current_kb_id is not None
+        has_documents = self._has_documents()
+        enabled = has_kb and has_documents
+        self.input.setEnabled(enabled)
+        self.send_button.setEnabled(enabled)
+        if not has_kb:
+            self.input.setPlaceholderText("请先创建或选择知识库")
+            self.status.setText("未选择知识库")
+        elif not has_documents:
+            self.input.setPlaceholderText("当前知识库暂无已索引文档，请先上传或处理文档")
+            self.browser.setHtml(
+                "<div style='color:#8a97a8;line-height:1.8'>"
+                "当前知识库还没有完成索引的文档。请先返回阅读器或侧栏上传文档，并等待处理完成。"
+                "</div>"
+            )
+            self.status.setText("当前知识库暂无已索引文档")
+        else:
+            self.input.setPlaceholderText("输入问题，Enter 发送；Shift+Enter 换行")
+            self.status.setText("就绪")
 
     def new_conversation(self) -> None:
         if not self.current_kb_id:
@@ -182,6 +217,9 @@ class ChatPanel(QWidget):
     def send(self) -> None:
         question = self.input.toPlainText().strip()
         if not question:
+            return
+        if not self._has_documents():
+            QMessageBox.information(self, "暂无文档", "当前知识库没有文档，请先上传文档。")
             return
         if not self.current_conversation_id:
             self.new_conversation()
