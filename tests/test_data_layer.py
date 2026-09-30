@@ -78,7 +78,7 @@ class DataLayerTests(unittest.TestCase):
 
 class VectorStoreTests(unittest.TestCase):
     def test_chroma_add_and_query(self) -> None:
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
             store = VectorStore(Path(folder))
             try:
                 store.add(

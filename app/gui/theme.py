@@ -19,6 +19,12 @@ QWidget {
 QMainWindow, QStackedWidget, QTabWidget::pane, QSplitter {
     background: transparent;
 }
+QMainWindow {
+    background: #fbfcff;
+}
+QWidget#backgroundHost {
+    background: #fbfcff;
+}
 QToolButton {
     border: 0;
     border-radius: 10px;
@@ -98,6 +104,8 @@ QToolTip { background: white; color: #27354a; border: 1px solid #f0dce8; padding
 class BackgroundHost(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("backgroundHost")
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
         self._pixmap = QPixmap()
 
     def set_background(self, path: str) -> None:
@@ -105,12 +113,11 @@ class BackgroundHost(QWidget):
         self.update()
 
     def paintEvent(self, event) -> None:
-        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         if self._pixmap.isNull():
-            painter = QPainter(self)
             painter.fillRect(self.rect(), QColor("#fbfcff"))
             return
-        painter = QPainter(self)
         target = self.rect()
         source = self._pixmap.size()
         scale = max(target.width() / max(1, source.width()), target.height() / max(1, source.height()))

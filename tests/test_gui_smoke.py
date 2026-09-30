@@ -202,6 +202,13 @@ class GuiSmokeTests(unittest.TestCase):
         grabbed = host.grab().toImage()
         self.assertEqual(grabbed.pixelColor(5, 5).name(), "#ffc0cb")
 
+    def test_background_host_default_is_light(self) -> None:
+        host = BackgroundHost()
+        host.resize(300, 200)
+        self.app.processEvents()
+        grabbed = host.grab().toImage()
+        self.assertEqual(grabbed.pixelColor(5, 5).name(), "#fbfcff")
+
 
 if __name__ == "__main__":
     unittest.main()

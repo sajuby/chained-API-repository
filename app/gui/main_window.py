@@ -557,8 +557,19 @@ class MainWindow(QMainWindow):
         cfg = self.context.config.config
         path = cfg.appearance.background_path if cfg.appearance.background_enabled else ""
         mode = cfg.appearance.background_mode
+        if self.current_kb_id:
+            repo = self.context.repository()
+            try:
+                kb = repo.get_kb(self.current_kb_id)
+                setting = kb.background_setting if kb and kb.background_setting else {}
+                if "enabled" in setting:
+                    path = setting.get("background_path", "") if setting.get("enabled") else ""
+                    mode = setting.get("background_mode", mode)
+            finally:
+                repo.close()
         self.background_host.set_background(path)
         self.setStyleSheet(GLOBAL_QSS + background_stylesheet(path, mode))
+        self.background_host.update()
 
     def closeEvent(self, event) -> None:
         self._save_state()
