@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -177,6 +178,10 @@ class MainWindow(QMainWindow):
         self.context = context
         self.setWindowTitle("本地文档知识库桌面助手")
         self.resize(1440, 860)
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        palette.setColor(QPalette.Window, QColor("#fbfcff"))
+        self.setPalette(palette)
         self.current_kb_id: int | None = None
         self.last_document_id: int | None = None
         self._active_reader_tab: int | None = None
@@ -184,6 +189,7 @@ class MainWindow(QMainWindow):
         self._busy = False
 
         self.sidebar = ExplorerSidebar(context)
+        self.sidebar.setObjectName("sidebarPanel")
         self.sidebar.document_activated.connect(self.open_document_by_id)
         self.sidebar.document_reprocess.connect(self.reprocess_document)
         self.sidebar.document_delete.connect(self.delete_document)
@@ -193,11 +199,14 @@ class MainWindow(QMainWindow):
         self.sidebar.vault_requested.connect(self.open_vault_dialog)
 
         self.reader = ReaderWorkspace()
+        self.reader.setObjectName("readerWorkspace")
         self.reader.ask_requested.connect(self.open_ai_side_panel)
         self.chat = ChatPanel(context)
+        self.chat.setObjectName("chatPanel")
         self.chat.citation_requested.connect(self.open_document_by_id)
         self.chat.close_requested.connect(lambda: self.switch_workspace("reader"))
         self.ai_side_panel = ChatPanel(context)
+        self.ai_side_panel.setObjectName("aiSidePanel")
         self.ai_side_panel.citation_requested.connect(self.open_document_by_id)
         self.ai_side_panel.close_requested.connect(self.ai_side_panel.hide)
         self.ai_side_panel.hide()
@@ -215,6 +224,7 @@ class MainWindow(QMainWindow):
         self.tier_combo.setMinimumWidth(150)
         self.tier_combo.currentIndexChanged.connect(self._tier_changed)
         topbar = QWidget()
+        topbar.setObjectName("topbarPanel")
         top_layout = QHBoxLayout(topbar)
         top_layout.setContentsMargins(18, 10, 18, 8)
         top_layout.addWidget(QLabel(context.config.data_dir.name or "本地知识库"))
@@ -222,6 +232,7 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(self.tier_combo)
         top_layout.addWidget(self.model_label)
         workspace_column = QWidget()
+        workspace_column.setObjectName("workspacePanel")
         workspace_layout = QVBoxLayout(workspace_column)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         workspace_layout.setSpacing(0)
@@ -229,6 +240,7 @@ class MainWindow(QMainWindow):
         workspace_layout.addWidget(self.workspace_stack, 1)
 
         self.context_panel = ContextPanel()
+        self.context_panel.setObjectName("contextPanel")
         self.context_panel.hide()
 
         rail = self._build_rail()
@@ -269,6 +281,7 @@ class MainWindow(QMainWindow):
         self.kb_btn.setProperty("active", True)
 
         box = QWidget()
+        box.setObjectName("railPanel")
         box.setFixedWidth(62)
         layout = QVBoxLayout(box)
         layout.setContentsMargins(10, 16, 10, 12)

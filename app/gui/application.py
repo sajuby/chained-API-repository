@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 
 from app.data.database import Database
@@ -23,6 +24,11 @@ def run_application(
     app = QApplication(sys.argv)
     app.setApplicationName("本地文档知识库桌面助手")
     app.setStyle("Fusion")
+    palette = app.palette()
+    palette.setColor(QPalette.Window, QColor("#fbfcff"))
+    palette.setColor(QPalette.Base, QColor("#ffffff"))
+    palette.setColor(QPalette.Text, QColor("#27354a"))
+    app.setPalette(palette)
     app.setStyleSheet(GLOBAL_QSS)
     app._smooth_interaction = SmoothInteractionFilter(app)
     app.installEventFilter(app._smooth_interaction)

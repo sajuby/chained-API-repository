@@ -14,16 +14,18 @@ QWidget {
     color: #27354a;
     font-family: "Segoe UI", "Microsoft YaHei";
     font-size: 13px;
-    background: transparent;
-}
-QMainWindow, QStackedWidget, QTabWidget::pane, QSplitter {
-    background: transparent;
 }
 QMainWindow {
     background: #fbfcff;
 }
 QWidget#backgroundHost {
     background: #fbfcff;
+}
+QStackedWidget, QTabWidget::pane, QSplitter,
+QWidget#railPanel, QWidget#sidebarPanel, QWidget#workspacePanel,
+QWidget#readerWorkspace, QWidget#chatPanel, QWidget#aiSidePanel,
+QWidget#contextPanel, QWidget#topbarPanel {
+    background: transparent;
 }
 QToolButton {
     border: 0;
