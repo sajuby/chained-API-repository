@@ -30,6 +30,15 @@
 - 大模型 API：OpenAI 兼容接口
 - 打包：PyInstaller
 
+> 为保证 PyInstaller 打包后的 Qt DLL 兼容性，项目固定使用 `PySide6==6.8.3`。
+
+## 启动问题排查
+
+- 优先双击 `启动.bat`，它会运行 `dist` 中已打包的程序。
+- 如果源码模式启动失败，日志会写入 `data/logs/startup.log`。
+- 打包程序启动失败时，日志会写入程序目录下的 `data/logs/startup.log`。
+- 如果安装了其他 PySide6 版本，请按 `requirements.txt` 重新安装，避免 Qt DLL 版本冲突。
+
 ## 快速开始
 
 ### 1. 准备环境
@@ -113,4 +122,3 @@ Windows 下也可以直接运行 `启动.bat`。该脚本会优先启动 `dist` 
 
 - 项目任务书：[docs/项目任务书-本地文档知识库桌面助手.md](docs/项目任务书-本地文档知识库桌面助手.md)
 - 前端功能说明：[docs/前端功能介绍-原文阅读与侧栏设计.md](docs/前端功能介绍-原文阅读与侧栏设计.md)
-

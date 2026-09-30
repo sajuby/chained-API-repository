@@ -1,5 +1,5 @@
 # 本地文档知识库桌面助手 - 核心依赖
-pyside6>=6.7.0
+pyside6==6.8.3
 sqlalchemy>=2.0.0
 chromadb>=0.5.0
 sentence-transformers>=3.0.0
